@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asistente de Voz - {{BUSINESS_NAME}}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .voice-widget {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .business-info {
+            margin-bottom: 30px;
+        }
+
+        .business-name {
+            font-size: 2em;
+            color: #333;
+            margin-bottom: 5px;
+            font-weight: 700;
+        }
+
+        .business-subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .voice-button {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+            color: white;
+            font-size: 3em;
+            cursor: pointer;
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(238, 90, 82, 0.3);
+        }
+
+        .voice-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 12px 35px rgba(238, 90, 82, 0.4);
+        }
+
+        .voice-button.recording {
+            background: linear-gradient(135deg, #ff4757, #c44569);
+            animation: pulse 2s infinite;
+            box-shadow: 0 0 30px rgba(255, 71, 87, 0.6);
+        }
+
+        .voice-button.processing {
+            background: linear-gradient(135deg, #ffa726, #fb8c00);
+            animation: spin 2s linear infinite;
+        }
+
+        .voice-button.playing {
+            background: linear-gradient(135deg, #26a69a, #00695c);
+            animation: wave 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 30px rgba(255, 71, 87, 0.6); }
+            50% { transform: scale(1.1); box-shadow: 0 0 40px rgba(255, 71, 87, 0.8); }
+            100% { transform: scale(1); box-shadow: 0 0 30px rgba(255, 71, 87, 0.6); }
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes wave {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .status {
+            margin: 20px 0;
+            font-size: 1.2em;
+            color: #333;
+            min-height: 30px;
+            font-weight: 500;
+        }
+
+        .recording-time {
+            color: #ff4757;
+            font-weight: bold;
+            font-size: 1.3em;
+        }
+
+        .conversation {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .conversation.active {
+            display: block;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 12px 16px;
+            border-radius: 20px;
+            max-width: 80%;
+        }
+
+        .message.user {
+            background: #e3f2fd;
+            color: #1565c0;
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .message.assistant {
+            background: #e8f5e8;
+            color: #2e7d32;
+            margin-right: auto;
+            text-align: left;
+        }
+
+        .message.system {
+            background: #fff3e0;
+            color: #f57c00;
+            margin: 5px auto;
+            text-align: center;
+            font-size: 0.9em;
+            font-style: italic;
+        }
+
+        .instructions {
+            background: rgba(248, 249, 250, 0.8);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            color: #666;
+            border-left: 4px solid #667eea;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            display: none;
+            border-left: 4px solid #c62828;
+        }
+
+        .powered-by {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(0,0,0,0.1);
+            color: #999;
+            font-size: 0.9em;
+        }
+
+        .powered-by a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        @media (max-width: 600px) {
+            .voice-widget {
+                padding: 20px;
+                margin: 10px;
+            }
+
+            .business-name {
+                font-size: 1.5em;
+            }
+
+            .voice-button {
+                width: 100px;
+                height: 100px;
+                font-size: 2.5em;
+            }
+
+            .message {
+                max-width: 95%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="voice-widget">
+        <div class="business-info">
+            <div class="business-name" id="businessName">Tu Restaurante</div>
+            <div class="business-subtitle">Asistente de voz inteligente</div>
+        </div>
+        
+        <button class="voice-button" id="voiceButton" title="Pulsa para hablar">
+            🎤
+        </button>
+        
+        <div class="status" id="status">¡Hola! Pulsa el micrófono y háblame</div>
+        
+        <div class="conversation" id="conversation"></div>
+        
+        <div class="instructions">
+            <strong>¿Cómo funciona?</strong><br>
+            • Pulsa el micrófono y permite el acceso<br>
+            • Háblame sobre reservas, menú o información<br>
+            • Escucha mi respuesta y continúa la conversación<br>
+            • Puedo hacer reservas, consultar disponibilidad y más
+        </div>
+        
+        <div class="error" id="error"></div>
+        
+        <div class="powered-by">
+            Powered by <a href="#">Fluxo AsistemeYa</a>
+        </div>
+        
+        <audio id="responseAudio" preload="none"></audio>
+    </div>
+
+    <script>
+        class VoiceAssistant {
+            constructor() {
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioChunks = [];
+                this.conversation = [];
+                this.businessId = this.getBusinessId();
+                this.serverUrl = this.getServerUrl();
+                
+                this.initializeElements();
+                this.setupEventListeners();
+                this.loadBusinessInfo();
+            }
+
+            getBusinessId() {
+                const params = new URLSearchParams(window.location.search);
+                return params.get('business') || 'demo';
+            }
+
+            getServerUrl() {
+                // Detectar automáticamente el servidor
+                if (window.location.hostname === 'localhost') {
+                    return 'http://localhost:3001';
+                }
+                return window.location.origin;
+            }
+
+            initializeElements() {
+                this.voiceButton = document.getElementById('voiceButton');
+                this.status = document.getElementById('status');
+                this.error = document.getElementById('error');
+                this.conversationDiv = document.getElementById('conversation');
+                this.responseAudio = document.getElementById('responseAudio');
+                this.businessName = document.getElementById('businessName');
+            }
+
+            setupEventListeners() {
+                this.voiceButton.addEventListener('click', () => {
+                    if (this.isRecording) {
+                        this.stopRecording();
+                    } else {
+                        this.startRecording();
+                    }
+                });
+
+                this.responseAudio.addEventListener('ended', () => {
+                    this.resetToListening();
+                });
+
+                this.responseAudio.addEventListener('error', () => {
+                    this.fallbackToSpeechSynthesis();
+                });
+            }
+
+            async loadBusinessInfo() {
+                try {
+                    const response = await fetch(`${this.serverUrl}/api/business/${this.businessId}`);
+                    if (response.ok) {
+                        const business = await response.json();
+                        this.businessName.textContent = business.name || 'Tu Restaurante';
+                        document.title = `Asistente de Voz - ${business.name || 'Restaurante'}`;
+                    }
+                } catch (error) {
+                    console.log('No se pudo cargar info del negocio, usando valores por defecto');
+                }
+            }
+
+            async startRecording() {
+                try {
+                    this.hideError();
+                    this.addSystemMessage('Solicitando acceso al micrófono...');
+
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            sampleRate: 44100
+                        } 
+                    });
+
+                    this.mediaRecorder = new MediaRecorder(stream);
+                    this.audioChunks = [];
+
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) {
+                            this.audioChunks.push(event.data);
+                        }
+                    };
+
+                    this.mediaRecorder.onstop = () => {
+                        this.processRecording();
+                    };
+
+                    this.mediaRecorder.start();
+                    this.isRecording = true;
+                    this.updateUIForRecording();
+                    this.startRecordingTimer();
+
+                } catch (error) {
+                    this.showError('Error accediendo al micrófono. Por favor, permite el acceso y recarga la página.');
+                }
+            }
+
+            stopRecording() {
+                if (this.mediaRecorder && this.isRecording) {
+                    this.mediaRecorder.stop();
+                    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                    this.isRecording = false;
+                    this.clearRecordingTimer();
+                    this.updateUIForProcessing();
+                }
+            }
+
+            updateUIForRecording() {
+                this.voiceButton.className = 'voice-button recording';
+                this.voiceButton.textContent = '🔴';
+                this.voiceButton.title = 'Pulsa para enviar';
+            }
+
+            updateUIForProcessing() {
+                this.voiceButton.className = 'voice-button processing';
+                this.voiceButton.textContent = '⚙️';
+                this.voiceButton.title = 'Procesando...';
+                this.status.textContent = 'Procesando tu solicitud...';
+            }
+
+            updateUIForPlaying() {
+                this.voiceButton.className = 'voice-button playing';
+                this.voiceButton.textContent = '🔊';
+                this.voiceButton.title = 'Reproduciendo respuesta';
+                this.status.textContent = 'Reproduciendo respuesta...';
+            }
+
+            resetToListening() {
+                this.voiceButton.className = 'voice-button';
+                this.voiceButton.textContent = '🎤';
+                this.voiceButton.title = 'Pulsa para hablar';
+                this.status.textContent = 'Pulsa el micrófono para continuar';
+            }
+
+            startRecordingTimer() {
+                let seconds = 0;
+                this.recordingInterval = setInterval(() => {
+                    seconds++;
+                    this.status.innerHTML = `<span class="recording-time">🔴 Grabando... ${seconds}s</span>`;
+                }, 1000);
+            }
+
+            clearRecordingTimer() {
+                if (this.recordingInterval) {
+                    clearInterval(this.recordingInterval);
+                }
+            }
+
+            async processRecording() {
+                try {
+                    const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                    
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob, 'recording.webm');
+                    formData.append('businessId', this.businessId);
+
+                    const response = await fetch(`${this.serverUrl}/voice/call`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Error del servidor: ${response.status} - ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.handleSuccess(result);
+                    } else {
+                        throw new Error(result.error || 'Error procesando audio');
+                    }
+
+                } catch (error) {
+                    this.showError(`Error: ${error.message}`);
+                    this.resetToListening();
+                }
+            }
+
+            handleSuccess(result) {
+                // Añadir mensajes a la conversación
+                if (result.userText) {
+                    this.addUserMessage(result.userText);
+                }
+                
+                if (result.assistantResponse) {
+                    this.addAssistantMessage(result.assistantResponse);
+                }
+
+                // Mostrar información de reserva
+                if (result.action && result.action.type === 'make_reservation') {
+                    this.addSystemMessage('✅ Reserva procesada correctamente');
+                }
+
+                // Reproducir respuesta
+                this.playResponse(result);
+            }
+
+            async playResponse(result) {
+                this.updateUIForPlaying();
+                
+                if (result.audioPath) {
+                    try {
+                        const audioUrl = result.audioPath.startsWith('http') 
+                            ? result.audioPath 
+                            : `${this.serverUrl}/${result.audioPath.replace('./uploads/', 'uploads/')}`;
+                        
+                        this.responseAudio.src = audioUrl;
+                        await this.responseAudio.play();
+                    } catch (error) {
+                        this.fallbackToSpeechSynthesis(result.assistantResponse);
+                    }
+                } else {
+                    this.fallbackToSpeechSynthesis(result.assistantResponse);
+                }
+            }
+
+            fallbackToSpeechSynthesis(text = '') {
+                if ('speechSynthesis' in window && text) {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'es-ES';
+                    utterance.rate = 0.9;
+                    utterance.onend = () => this.resetToListening();
+                    speechSynthesis.speak(utterance);
+                } else {
+                    this.resetToListening();
+                }
+            }
+
+            addUserMessage(text) {
+                this.addMessage(text, 'user', '👤 Tú');
+            }
+
+            addAssistantMessage(text) {
+                this.addMessage(text, 'assistant', '🤖 Asistente');
+            }
+
+            addSystemMessage(text) {
+                this.addMessage(text, 'system');
+            }
+
+            addMessage(text, type, prefix = '') {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${type}`;
+                
+                if (prefix) {
+                    messageDiv.innerHTML = `<strong>${prefix}:</strong> ${text}`;
+                } else {
+                    messageDiv.textContent = text;
+                }
+
+                this.conversationDiv.appendChild(messageDiv);
+                this.conversationDiv.classList.add('active');
+                
+                // Scroll al último mensaje
+                messageDiv.scrollIntoView({ behavior: 'smooth' });
+            }
+
+            showError(message) {
+                this.error.textContent = message;
+                this.error.style.display = 'block';
+                setTimeout(() => this.hideError(), 8000);
+            }
+
+            hideError() {
+                this.error.style.display = 'none';
+            }
+        }
+
+        // Verificar compatibilidad del navegador
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            document.getElementById('status').textContent = 'Tu navegador no soporta grabación de audio. Prueba con Chrome, Firefox o Safari.';
+            document.getElementById('voiceButton').disabled = true;
+            document.getElementById('voiceButton').style.opacity = '0.5';
+        } else {
+            // Inicializar cuando se carga la página
+            document.addEventListener('DOMContentLoaded', () => {
+                new VoiceAssistant();
+            });
+        }
+    </script>
+</body>
+</html>
