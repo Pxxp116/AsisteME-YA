@@ -9,9 +9,10 @@ const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY;
  */
 const dashboardAxios = axios.create({
   baseURL: DASHBOARD_BASE_URL,
-  timeout: 10000,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
+    'User-Agent': 'AsistemeVoice/1.0',
     ...(DASHBOARD_API_KEY && { 'Authorization': `Bearer ${DASHBOARD_API_KEY}` })
   }
 });
@@ -25,37 +26,41 @@ async function getDashboardData(businessId = 'default') {
   try {
     logInfo(`📊 Obteniendo datos del dashboard para: ${businessId}`);
     
-    // Hacer requests paralelos para obtener toda la información
+    // Hacer requests paralelos para obtener toda la información usando los endpoints reales
     const [
-      businessInfo,
+      restauranteInfo,
       menuData,
-      tablesData,
-      availabilityData,
-      reservationsData
+      mesasData,
+      horariosData
     ] = await Promise.allSettled([
-      getBusinessInfo(businessId),
-      getMenu(businessId),
-      getTables(businessId),
-      getAvailability(businessId),
-      getReservations(businessId)
+      getRestauranteInfo(),
+      getMenu(),
+      getMesas(),
+      getHorariosDisponibles()
     ]);
 
-    // Construir objeto con todos los datos
+    // Construir objeto con todos los datos reales
     const dashboardData = {
       businessId: businessId,
-      name: businessInfo.status === 'fulfilled' ? businessInfo.value.name : 'Restaurante',
-      type: businessInfo.status === 'fulfilled' ? businessInfo.value.type : 'restaurante',
-      phone: businessInfo.status === 'fulfilled' ? businessInfo.value.phone : '',
-      address: businessInfo.status === 'fulfilled' ? businessInfo.value.address : '',
-      hours: businessInfo.status === 'fulfilled' ? businessInfo.value.hours : '',
+      name: restauranteInfo.status === 'fulfilled' && restauranteInfo.value?.nombre ? 
+            restauranteInfo.value.nombre : 'Restaurante',
+      type: 'restaurante',
+      phone: restauranteInfo.status === 'fulfilled' && restauranteInfo.value?.telefono ? 
+             restauranteInfo.value.telefono : 'Consultar',
+      address: restauranteInfo.status === 'fulfilled' && restauranteInfo.value?.direccion ? 
+               restauranteInfo.value.direccion : 'Consultar',
+      hours: restauranteInfo.status === 'fulfilled' && restauranteInfo.value?.horario ? 
+             restauranteInfo.value.horario : 'Consultar horarios',
       menu: menuData.status === 'fulfilled' ? menuData.value : [],
-      tables: tablesData.status === 'fulfilled' ? tablesData.value : [],
-      availableSlots: availabilityData.status === 'fulfilled' ? availabilityData.value : [],
-      reservations: reservationsData.status === 'fulfilled' ? reservationsData.value : [],
+      tables: mesasData.status === 'fulfilled' ? mesasData.value : [],
+      availableSlots: horariosData.status === 'fulfilled' ? horariosData.value : [],
       lastUpdated: new Date().toISOString()
     };
 
     logInfo(`✅ Datos del dashboard obtenidos correctamente`);
+    logInfo(`🍽️ Menu items: ${dashboardData.menu.length}`);
+    logInfo(`🪑 Tables: ${dashboardData.tables.length}`);
+    
     return dashboardData;
 
   } catch (error) {
@@ -65,14 +70,13 @@ async function getDashboardData(businessId = 'default') {
     return {
       businessId: businessId,
       name: 'Restaurante',
-      type: 'restaurante',
+      type: 'restaurante', 
       phone: 'No disponible',
       address: 'No disponible',
       hours: 'Consultar horarios',
       menu: [],
       tables: [],
       availableSlots: [],
-      reservations: [],
       lastUpdated: new Date().toISOString(),
       error: true
     };
@@ -80,87 +84,102 @@ async function getDashboardData(businessId = 'default') {
 }
 
 /**
- * Obtiene información básica del negocio
- * @param {string} businessId - ID del negocio
- * @returns {Promise<Object>} - Información del negocio
+ * Obtiene información del restaurante usando el endpoint real
+ * @returns {Promise<Object>} - Información del restaurante
  */
-async function getBusinessInfo(businessId) {
+async function getRestauranteInfo() {
   try {
-    const response = await dashboardAxios.get(`/api/business/${businessId}`);
+    const response = await dashboardAxios.get('/api/admin/restaurante');
+    logInfo('✅ Info restaurante obtenida');
     return response.data;
   } catch (error) {
-    logError(`Error obteniendo info del negocio ${businessId}:`, error.message);
+    logError('Error obteniendo info del restaurante:', error.message);
     throw error;
   }
 }
 
 /**
- * Obtiene el menú del restaurante
- * @param {string} businessId - ID del negocio
+ * Obtiene el menú usando el endpoint real
  * @returns {Promise<Array>} - Lista de items del menú
  */
-async function getMenu(businessId) {
+async function getMenu() {
   try {
-    const response = await dashboardAxios.get(`/api/business/${businessId}/menu`);
-    return response.data;
+    const response = await dashboardAxios.get('/api/ver-menu');
+    logInfo('✅ Menú obtenido');
+    
+    // El endpoint devuelve las categorías con sus platos
+    const menuItems = [];
+    if (response.data && Array.isArray(response.data)) {
+      response.data.forEach(categoria => {
+        if (categoria.platos && Array.isArray(categoria.platos)) {
+          categoria.platos.forEach(plato => {
+            menuItems.push({
+              id: plato.id,
+              name: plato.nombre,
+              description: plato.descripcion,
+              price: plato.precio ? `€${plato.precio}` : 'Consultar precio',
+              category: categoria.nombre,
+              available: plato.disponible !== false
+            });
+          });
+        }
+      });
+    }
+    
+    logInfo(`🍽️ ${menuItems.length} platos encontrados en el menú`);
+    return menuItems;
+    
   } catch (error) {
-    logError(`Error obteniendo menú de ${businessId}:`, error.message);
+    logError('Error obteniendo menú:', error.message);
     throw error;
   }
 }
 
 /**
- * Obtiene información de las mesas
- * @param {string} businessId - ID del negocio
+ * Obtiene información de las mesas usando el endpoint real
  * @returns {Promise<Array>} - Lista de mesas
  */
-async function getTables(businessId) {
+async function getMesas() {
   try {
-    const response = await dashboardAxios.get(`/api/business/${businessId}/tables`);
-    return response.data;
+    const response = await dashboardAxios.get('/api/admin/mesas');
+    logInfo('✅ Mesas obtenidas');
+    
+    const mesas = response.data || [];
+    return mesas.map(mesa => ({
+      id: mesa.id,
+      number: mesa.numero,
+      capacity: mesa.capacidad,
+      status: mesa.estado || 'disponible'
+    }));
+    
   } catch (error) {
-    logError(`Error obteniendo mesas de ${businessId}:`, error.message);
+    logError('Error obteniendo mesas:', error.message);
     throw error;
   }
 }
 
 /**
- * Obtiene disponibilidad de horarios
- * @param {string} businessId - ID del negocio
+ * Obtiene horarios disponibles usando el endpoint real
  * @param {string} date - Fecha (opcional, por defecto hoy)
  * @returns {Promise<Array>} - Horarios disponibles
  */
-async function getAvailability(businessId, date = null) {
+async function getHorariosDisponibles(date = null) {
   try {
     const dateParam = date || new Date().toISOString().split('T')[0];
-    const response = await dashboardAxios.get(`/api/business/${businessId}/availability?date=${dateParam}`);
-    return response.data;
+    const response = await dashboardAxios.get(`/api/horarios-disponibles?fecha=${dateParam}`);
+    logInfo('✅ Horarios disponibles obtenidos');
+    
+    return response.data || [];
+    
   } catch (error) {
-    logError(`Error obteniendo disponibilidad de ${businessId}:`, error.message);
+    logError('Error obteniendo horarios disponibles:', error.message);
     throw error;
   }
 }
 
 /**
- * Obtiene reservas existentes
- * @param {string} businessId - ID del negocio
- * @param {string} date - Fecha (opcional)
- * @returns {Promise<Array>} - Lista de reservas
- */
-async function getReservations(businessId, date = null) {
-  try {
-    const dateParam = date || new Date().toISOString().split('T')[0];
-    const response = await dashboardAxios.get(`/api/business/${businessId}/reservations?date=${dateParam}`);
-    return response.data;
-  } catch (error) {
-    logError(`Error obteniendo reservas de ${businessId}:`, error.message);
-    throw error;
-  }
-}
-
-/**
- * Crea una nueva reserva
- * @param {string} businessId - ID del negocio
+ * Crea una nueva reserva usando el endpoint real
+ * @param {string} businessId - ID del negocio  
  * @param {Object} reservationData - Datos de la reserva
  * @returns {Promise<Object>} - Reserva creada
  */
@@ -176,20 +195,33 @@ async function makeReservation(businessId, reservationData) {
       }
     }
 
-    // Preparar datos de la reserva
+    // Primero buscar mesa disponible
+    const mesaResponse = await buscarMesa({
+      fecha: formatDate(reservationData.date),
+      hora: reservationData.time,
+      personas: parseInt(reservationData.people)
+    });
+
+    if (!mesaResponse || !mesaResponse.mesaId) {
+      throw new Error('No hay mesas disponibles para esa fecha y hora');
+    }
+
+    // Preparar datos para crear reserva según el formato del endpoint real
     const reservationPayload = {
-      customer_name: reservationData.name,
-      customer_phone: reservationData.phone || 'No proporcionado',
-      party_size: parseInt(reservationData.people),
-      reservation_date: formatDate(reservationData.date),
-      reservation_time: reservationData.time,
-      notes: reservationData.notes || 'Reserva realizada por asistente de voz',
-      source: 'voice_assistant',
-      status: 'confirmed',
-      created_at: new Date().toISOString()
+      mesaId: mesaResponse.mesaId,
+      fecha: formatDate(reservationData.date),
+      hora: reservationData.time,
+      personas: parseInt(reservationData.people),
+      cliente: {
+        nombre: reservationData.name,
+        telefono: reservationData.phone || 'No proporcionado',
+        email: reservationData.email || ''
+      },
+      notas: reservationData.notes || 'Reserva realizada por asistente de voz',
+      origen: 'asistente_voz'
     };
 
-    const response = await dashboardAxios.post(`/api/business/${businessId}/reservations`, reservationPayload);
+    const response = await dashboardAxios.post('/api/crear-reserva', reservationPayload);
     
     logInfo(`✅ Reserva creada exitosamente:`, response.data);
     return response.data;
@@ -199,7 +231,7 @@ async function makeReservation(businessId, reservationData) {
     
     if (error.response) {
       logError('Response error:', error.response.data);
-      throw new Error(`Error del servidor: ${error.response.data.message || 'Error desconocido'}`);
+      throw new Error(`Error del servidor: ${error.response.data.message || error.response.statusText}`);
     }
     
     throw new Error(`Error de conexión: ${error.message}`);
@@ -207,16 +239,54 @@ async function makeReservation(businessId, reservationData) {
 }
 
 /**
- * Cancela una reserva existente
- * @param {string} businessId - ID del negocio
+ * Busca mesa disponible usando el endpoint real
+ * @param {Object} searchParams - Parámetros de búsqueda
+ * @returns {Promise<Object>} - Resultado de la búsqueda
+ */
+async function buscarMesa(searchParams) {
+  try {
+    logInfo('🔍 Buscando mesa disponible:', searchParams);
+    
+    const response = await dashboardAxios.post('/api/buscar-mesa', searchParams);
+    
+    logInfo('✅ Búsqueda de mesa completada');
+    return response.data;
+    
+  } catch (error) {
+    logError('Error buscando mesa:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Consulta una reserva existente
+ * @param {string} criterio - Nombre, teléfono o ID de reserva
+ * @returns {Promise<Array>} - Reservas encontradas
+ */
+async function consultarReserva(criterio) {
+  try {
+    logInfo(`🔍 Consultando reserva: ${criterio}`);
+    
+    const response = await dashboardAxios.get(`/api/consultar-reserva?criterio=${encodeURIComponent(criterio)}`);
+    
+    return response.data || [];
+    
+  } catch (error) {
+    logError('Error consultando reserva:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Cancela una reserva existente usando el endpoint real
  * @param {string} reservationId - ID de la reserva
  * @returns {Promise<Object>} - Resultado de la cancelación
  */
-async function cancelReservation(businessId, reservationId) {
+async function cancelReservation(reservationId) {
   try {
-    logInfo(`❌ Cancelando reserva ${reservationId} para ${businessId}`);
+    logInfo(`❌ Cancelando reserva ${reservationId}`);
     
-    const response = await dashboardAxios.delete(`/api/business/${businessId}/reservations/${reservationId}`);
+    const response = await dashboardAxios.delete(`/api/cancelar-reserva/${reservationId}`);
     
     logInfo(`✅ Reserva cancelada exitosamente`);
     return response.data;
@@ -228,51 +298,9 @@ async function cancelReservation(businessId, reservationId) {
 }
 
 /**
- * Actualiza una reserva existente
- * @param {string} businessId - ID del negocio
- * @param {string} reservationId - ID de la reserva
- * @param {Object} updateData - Datos a actualizar
- * @returns {Promise<Object>} - Reserva actualizada
- */
-async function updateReservation(businessId, reservationId, updateData) {
-  try {
-    logInfo(`✏️ Actualizando reserva ${reservationId} para ${businessId}`);
-    
-    const response = await dashboardAxios.put(`/api/business/${businessId}/reservations/${reservationId}`, updateData);
-    
-    logInfo(`✅ Reserva actualizada exitosamente`);
-    return response.data;
-
-  } catch (error) {
-    logError('Error actualizando reserva:', error);
-    throw new Error(`Error actualizando reserva: ${error.message}`);
-  }
-}
-
-/**
- * Busca reservas por nombre o teléfono
- * @param {string} businessId - ID del negocio
- * @param {string} searchTerm - Término de búsqueda
- * @returns {Promise<Array>} - Reservas encontradas
- */
-async function searchReservations(businessId, searchTerm) {
-  try {
-    logInfo(`🔍 Buscando reservas para: ${searchTerm}`);
-    
-    const response = await dashboardAxios.get(`/api/business/${businessId}/reservations/search?q=${encodeURIComponent(searchTerm)}`);
-    
-    return response.data;
-
-  } catch (error) {
-    logError('Error buscando reservas:', error);
-    throw error;
-  }
-}
-
-/**
  * Formatea una fecha para el dashboard
  * @param {string} date - Fecha en formato humano
- * @returns {string} - Fecha formateada
+ * @returns {string} - Fecha formateada YYYY-MM-DD
  */
 function formatDate(date) {
   try {
@@ -301,7 +329,12 @@ function formatDate(date) {
       return `${year}-${month}-${day}`;
     }
     
-    return date;
+    // Si ya está en formato YYYY-MM-DD
+    if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return date;
+    }
+    
+    return new Date().toISOString().split('T')[0];
     
   } catch (error) {
     logError('Error formateando fecha:', error);
@@ -315,7 +348,7 @@ function formatDate(date) {
  */
 async function checkDashboardConnection() {
   try {
-    const response = await dashboardAxios.get('/health');
+    const response = await dashboardAxios.get('/api/ping');
     logInfo('✅ Conexión con dashboard OK');
     return true;
   } catch (error) {
@@ -326,15 +359,14 @@ async function checkDashboardConnection() {
 
 module.exports = {
   getDashboardData,
-  getBusinessInfo,
+  getRestauranteInfo,
   getMenu,
-  getTables,
-  getAvailability,
-  getReservations,
+  getMesas,
+  getHorariosDisponibles,
   makeReservation,
+  buscarMesa,
+  consultarReserva,
   cancelReservation,
-  updateReservation,
-  searchReservations,
   checkDashboardConnection,
   formatDate
 };
