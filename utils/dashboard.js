@@ -1,8 +1,8 @@
 const axios = require('axios');
 const { logInfo, logError } = require('./logger');
 
-// URL del BACKEND real que tiene los datos (no el dashboard frontend)
-const BACKEND_BASE_URL = 'https://backend-2-production-227a.up.railway.app/api';
+// URL del backend real proporcionado por tu colega
+const BACKEND_BASE_URL = 'https://backend-2-production-9cde.up.railway.app/api';
 const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY;
 
 /**
@@ -19,61 +19,58 @@ const backendAxios = axios.create({
 });
 
 /**
- * Obtiene todos los datos del backend para un negocio
+ * Obtiene todos los datos del backend usando el espejo
  * @param {string} businessId - ID del negocio
  * @returns {Promise<Object>} - Datos del negocio
  */
 async function getDashboardData(businessId = 'default') {
   try {
-    logInfo(`📊 Obteniendo datos del backend real para: ${businessId}`);
+    logInfo(`📊 Obteniendo datos del espejo para: ${businessId}`);
     
-    // Hacer requests paralelos usando los endpoints reales del backend
+    // Usar el endpoint /espejo que contiene toda la información
     const [
-      restauranteInfo,
+      espejoData,
       menuData,
-      mesasData,
       horariosData
     ] = await Promise.allSettled([
-      getRestauranteInfo(),
+      getEspejo(),
       getMenu(),
-      getMesas(),
-      getHorariosDisponibles()
+      getHorarios()
     ]);
 
-    // Construir objeto con todos los datos reales del backend
+    // Construir objeto con los datos del espejo
+    const espejo = espejoData.status === 'fulfilled' ? espejoData.value : {};
+    
     const dashboardData = {
       businessId: businessId,
-      name: restauranteInfo.status === 'fulfilled' && restauranteInfo.value?.nombre ? 
-            restauranteInfo.value.nombre : 'Restaurante',
+      name: espejo.restaurante?.nombre || 'Restaurante',
       type: 'restaurante',
-      phone: restauranteInfo.status === 'fulfilled' && restauranteInfo.value?.telefono ? 
-             restauranteInfo.value.telefono : 'Consultar',
-      address: restauranteInfo.status === 'fulfilled' && restauranteInfo.value?.direccion ? 
-               restauranteInfo.value.direccion : 'Consultar',
-      hours: restauranteInfo.status === 'fulfilled' && restauranteInfo.value?.horario ? 
-             restauranteInfo.value.horario : 'Consultar horarios',
+      phone: espejo.restaurante?.telefono || 'Consultar',
+      address: espejo.restaurante?.direccion || 'Consultar',
+      hours: horariosData.status === 'fulfilled' ? 
+             formatHorarios(horariosData.value) : 'Consultar horarios',
       menu: menuData.status === 'fulfilled' ? menuData.value : [],
-      tables: mesasData.status === 'fulfilled' ? mesasData.value : [],
-      availableSlots: horariosData.status === 'fulfilled' ? horariosData.value : [],
+      tables: espejo.mesas || [],
+      availableSlots: espejo.horariosDisponibles || [],
+      reservations: espejo.reservas || [],
       lastUpdated: new Date().toISOString()
     };
 
-    logInfo(`✅ Datos del backend obtenidos correctamente`);
+    logInfo(`✅ Datos del espejo obtenidos correctamente`);
     logInfo(`🍽️ Menu items: ${dashboardData.menu.length}`);
     logInfo(`🪑 Tables: ${dashboardData.tables.length}`);
     
     return dashboardData;
 
   } catch (error) {
-    logError('Error obteniendo datos del backend:', error);
+    logError('Error obteniendo datos del espejo:', error);
     
-    // Retornar datos por defecto en caso de error
     return {
       businessId: businessId,
       name: 'Restaurante',
       type: 'restaurante',
       phone: 'No disponible',
-      address: 'No disponible', 
+      address: 'No disponible',
       hours: 'Consultar horarios',
       menu: [],
       tables: [],
@@ -85,22 +82,22 @@ async function getDashboardData(businessId = 'default') {
 }
 
 /**
- * Obtiene información del restaurante del backend real
- * @returns {Promise<Object>} - Información del restaurante
+ * Obtiene el espejo completo con toda la información
+ * @returns {Promise<Object>} - Datos completos del espejo
  */
-async function getRestauranteInfo() {
+async function getEspejo() {
   try {
-    const response = await backendAxios.get('/admin/restaurante');
-    logInfo('✅ Info restaurante obtenida del backend');
+    const response = await backendAxios.get('/espejo');
+    logInfo('✅ Espejo completo obtenido del backend');
     return response.data;
   } catch (error) {
-    logError('Error obteniendo info del restaurante:', error.message);
+    logError('Error obteniendo espejo:', error.message);
     throw error;
   }
 }
 
 /**
- * Obtiene el menú del backend real
+ * Obtiene el menú del restaurante
  * @returns {Promise<Array>} - Lista de items del menú
  */
 async function getMenu() {
@@ -108,7 +105,6 @@ async function getMenu() {
     const response = await backendAxios.get('/ver-menu');
     logInfo('✅ Menú obtenido del backend');
     
-    // El backend devuelve las categorías con sus platos
     const menuItems = [];
     if (response.data && Array.isArray(response.data)) {
       response.data.forEach(categoria => {
@@ -137,105 +133,34 @@ async function getMenu() {
 }
 
 /**
- * Obtiene información de las mesas del backend real
- * @returns {Promise<Array>} - Lista de mesas
+ * Obtiene los horarios del restaurante
+ * @returns {Promise<Object>} - Horarios del restaurante
  */
-async function getMesas() {
+async function getHorarios() {
   try {
-    const response = await backendAxios.get('/admin/mesas');
-    logInfo('✅ Mesas obtenidas del backend');
-    
-    const mesas = response.data || [];
-    return mesas.map(mesa => ({
-      id: mesa.id,
-      number: mesa.numero,
-      capacity: mesa.capacidad,
-      status: mesa.estado || 'disponible'
-    }));
-    
-  } catch (error) {
-    logError('Error obteniendo mesas:', error.message);
-    throw error;
-  }
-}
-
-/**
- * Obtiene horarios disponibles del backend real
- * @param {string} date - Fecha (opcional, por defecto hoy)
- * @returns {Promise<Array>} - Horarios disponibles
- */
-async function getHorariosDisponibles(date = null) {
-  try {
-    const dateParam = date || new Date().toISOString().split('T')[0];
-    const response = await backendAxios.get(`/horarios-disponibles?fecha=${dateParam}`);
-    logInfo('✅ Horarios disponibles obtenidos del backend');
-    
-    return response.data || [];
-    
-  } catch (error) {
-    logError('Error obteniendo horarios disponibles:', error.message);
-    throw error;
-  }
-}
-
-/**
- * Crea una nueva reserva en el backend real
- * @param {string} businessId - ID del negocio
- * @param {Object} reservationData - Datos de la reserva
- * @returns {Promise<Object>} - Reserva creada
- */
-async function makeReservation(businessId, reservationData) {
-  try {
-    logInfo(`📝 Creando reserva en backend para ${businessId}:`, reservationData);
-    
-    // Validar datos requeridos
-    const requiredFields = ['name', 'people', 'date', 'time'];
-    for (const field of requiredFields) {
-      if (!reservationData[field]) {
-        throw new Error(`Campo requerido faltante: ${field}`);
-      }
-    }
-
-    // Primero buscar mesa disponible en el backend
-    const mesaResponse = await buscarMesa({
-      fecha: formatDate(reservationData.date),
-      hora: reservationData.time,
-      personas: parseInt(reservationData.people)
-    });
-
-    if (!mesaResponse || !mesaResponse.mesaId) {
-      throw new Error('No hay mesas disponibles para esa fecha y hora');
-    }
-
-    // Preparar datos para el backend real
-    const reservationPayload = {
-      mesaId: mesaResponse.mesaId,
-      fecha: formatDate(reservationData.date),
-      hora: reservationData.time,
-      personas: parseInt(reservationData.people),
-      cliente: {
-        nombre: reservationData.name,
-        telefono: reservationData.phone || 'No proporcionado',
-        email: reservationData.email || ''
-      },
-      notas: reservationData.notes || 'Reserva realizada por asistente de voz',
-      origen: 'asistente_voz'
-    };
-
-    const response = await backendAxios.post('/crear-reserva', reservationPayload);
-    
-    logInfo(`✅ Reserva creada exitosamente en backend:`, response.data);
+    const response = await backendAxios.get('/admin/horarios');
+    logInfo('✅ Horarios obtenidos del backend');
     return response.data;
-
   } catch (error) {
-    logError('Error creando reserva en backend:', error);
-    
-    if (error.response) {
-      logError('Backend response error:', error.response.data);
-      throw new Error(`Error del backend: ${error.response.data.message || error.response.statusText}`);
-    }
-    
-    throw new Error(`Error de conexión con backend: ${error.message}`);
+    logError('Error obteniendo horarios:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Consulta horario específico
+ * @param {string} fecha - Fecha a consultar (opcional)
+ * @returns {Promise<Object>} - Información del horario
+ */
+async function consultarHorario(fecha = null) {
+  try {
+    const params = fecha ? `?fecha=${fecha}` : '';
+    const response = await backendAxios.get(`/consultar-horario${params}`);
+    logInfo('✅ Horario consultado del backend');
+    return response.data;
+  } catch (error) {
+    logError('Error consultando horario:', error.message);
+    throw error;
   }
 }
 
@@ -260,26 +185,101 @@ async function buscarMesa(searchParams) {
 }
 
 /**
- * Consulta una reserva existente en el backend real
- * @param {string} criterio - Nombre, teléfono o ID de reserva
- * @returns {Promise<Array>} - Reservas encontradas
+ * Crea una nueva reserva en el backend real
+ * @param {string} businessId - ID del negocio
+ * @param {Object} reservationData - Datos de la reserva
+ * @returns {Promise<Object>} - Reserva creada
  */
-async function consultarReserva(criterio) {
+async function makeReservation(businessId, reservationData) {
   try {
-    logInfo(`🔍 Consultando reserva en backend: ${criterio}`);
+    logInfo(`📝 Creando reserva en backend para ${businessId}:`, reservationData);
     
-    const response = await backendAxios.get(`/consultar-reserva?criterio=${encodeURIComponent(criterio)}`);
+    const requiredFields = ['name', 'people', 'date', 'time'];
+    for (const field of requiredFields) {
+      if (!reservationData[field]) {
+        throw new Error(`Campo requerido faltante: ${field}`);
+      }
+    }
+
+    // Buscar mesa disponible primero
+    const mesaSearch = {
+      fecha: formatDate(reservationData.date),
+      hora: reservationData.time,
+      personas: parseInt(reservationData.people)
+    };
+
+    const mesaResponse = await buscarMesa(mesaSearch);
+
+    if (!mesaResponse || (!mesaResponse.mesaId && !mesaResponse.mesa)) {
+      throw new Error('No hay mesas disponibles para esa fecha y hora');
+    }
+
+    // Preparar datos para el backend real
+    const reservationPayload = {
+      mesaId: mesaResponse.mesaId || mesaResponse.mesa?.id,
+      fecha: formatDate(reservationData.date),
+      hora: reservationData.time,
+      personas: parseInt(reservationData.people),
+      cliente: {
+        nombre: reservationData.name,
+        telefono: reservationData.phone || 'Por confirmar',
+        email: reservationData.email || ''
+      },
+      notas: reservationData.notes || 'Reserva realizada por asistente de voz',
+      origen: 'asistente_voz'
+    };
+
+    const response = await backendAxios.post('/crear-reserva', reservationPayload);
     
-    return response.data || [];
+    logInfo(`✅ Reserva creada exitosamente en backend:`, response.data);
+    
+    // Formatear respuesta para el asistente
+    const reservaCreada = response.data;
+    return {
+      id: reservaCreada.id,
+      numero: reservaCreada.numero || reservaCreada.id,
+      cliente: reservaCreada.cliente?.nombre || reservationData.name,
+      fecha: reservaCreada.fecha,
+      hora: reservaCreada.hora,
+      personas: reservaCreada.personas,
+      mesa: reservaCreada.mesa?.numero || 'Por asignar',
+      estado: reservaCreada.estado || 'confirmada'
+    };
+
+  } catch (error) {
+    logError('Error creando reserva en backend:', error);
+    
+    if (error.response) {
+      logError('Backend response error:', error.response.data);
+      throw new Error(`Error del backend: ${error.response.data.message || error.response.statusText}`);
+    }
+    
+    throw new Error(`Error de conexión con backend: ${error.message}`);
+  }
+}
+
+/**
+ * Modifica una reserva existente
+ * @param {Object} reservaData - Datos de la reserva a modificar
+ * @returns {Promise<Object>} - Reserva modificada
+ */
+async function modificarReserva(reservaData) {
+  try {
+    logInfo('✏️ Modificando reserva en backend:', reservaData);
+    
+    const response = await backendAxios.put('/modificar-reserva', reservaData);
+    
+    logInfo('✅ Reserva modificada exitosamente');
+    return response.data;
     
   } catch (error) {
-    logError('Error consultando reserva en backend:', error.message);
+    logError('Error modificando reserva:', error.message);
     throw error;
   }
 }
 
 /**
- * Cancela una reserva existente en el backend real
+ * Cancela una reserva existente
  * @param {string} reservationId - ID de la reserva
  * @returns {Promise<Object>} - Resultado de la cancelación
  */
@@ -287,7 +287,9 @@ async function cancelReservation(reservationId) {
   try {
     logInfo(`❌ Cancelando reserva ${reservationId} en backend`);
     
-    const response = await backendAxios.delete(`/cancelar-reserva/${reservationId}`);
+    const response = await backendAxios.delete(`/cancelar-reserva`, {
+      data: { id: reservationId }
+    });
     
     logInfo(`✅ Reserva cancelada exitosamente en backend`);
     return response.data;
@@ -299,21 +301,26 @@ async function cancelReservation(reservationId) {
 }
 
 /**
- * Obtiene el espejo-gpt que podría contener todos los datos
- * @returns {Promise<Object>} - Datos del espejo GPT
+ * Formatea los horarios para mostrar al usuario
+ * @param {Object} horarios - Horarios del restaurante
+ * @returns {string} - Horarios formateados
  */
-async function getEspejoGPT() {
+function formatHorarios(horarios) {
+  if (!horarios) return 'Consultar horarios';
+  
   try {
-    logInfo('🔍 Obteniendo espejo-gpt del backend');
+    const dias = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+    const horariosText = [];
     
-    const response = await backendAxios.get('/espejo-gpt');
+    dias.forEach(dia => {
+      if (horarios[dia] && horarios[dia].abierto) {
+        horariosText.push(`${dia}: ${horarios[dia].apertura} - ${horarios[dia].cierre}`);
+      }
+    });
     
-    logInfo('✅ Espejo-gpt obtenido del backend');
-    return response.data;
-    
+    return horariosText.length > 0 ? horariosText.join(', ') : 'Consultar horarios';
   } catch (error) {
-    logError('Error obteniendo espejo-gpt:', error.message);
-    throw error;
+    return 'Consultar horarios';
   }
 }
 
@@ -340,7 +347,6 @@ function formatDate(date) {
       return dayAfterTomorrow.toISOString().split('T')[0];
     }
     
-    // Si es una fecha en formato DD/MM o DD/MM/YYYY
     if (date.includes('/')) {
       const parts = date.split('/');
       const day = parts[0].padStart(2, '0');
@@ -349,7 +355,6 @@ function formatDate(date) {
       return `${year}-${month}-${day}`;
     }
     
-    // Si ya está en formato YYYY-MM-DD
     if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
       return date;
     }
@@ -368,39 +373,25 @@ function formatDate(date) {
  */
 async function checkDashboardConnection() {
   try {
-    // Probar diferentes endpoints para verificar conexión
-    const testEndpoints = ['/ping', '/health', '/api/ping'];
-    
-    for (const endpoint of testEndpoints) {
-      try {
-        await backendAxios.get(endpoint);
-        logInfo(`✅ Conexión con backend OK via ${endpoint}`);
-        return true;
-      } catch (error) {
-        continue;
-      }
-    }
-    
-    logError('❌ No se pudo conectar con ningún endpoint del backend');
-    return false;
-    
+    await backendAxios.get('/espejo');
+    logInfo('✅ Conexión con backend OK via /espejo');
+    return true;
   } catch (error) {
-    logError('❌ Error general de conexión con backend:', error.message);
+    logError('❌ Error de conexión con backend:', error.message);
     return false;
   }
 }
 
 module.exports = {
   getDashboardData,
-  getRestauranteInfo,
+  getEspejo,
   getMenu,
-  getMesas,
-  getHorariosDisponibles,
-  makeReservation,
+  getHorarios,
+  consultarHorario,
   buscarMesa,
-  consultarReserva,
+  makeReservation,
+  modificarReserva,
   cancelReservation,
-  getEspejoGPT,
   checkDashboardConnection,
   formatDate
 };
